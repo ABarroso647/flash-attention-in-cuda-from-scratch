@@ -8,7 +8,6 @@ import numpy as np
 
 # Step 1 - vector_add
 __global__ void vector_add(const float* a, const float* b, float* c, int n) {
-    // TODO: implement elementwise c[i] = a[i] + b[i]
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n)
         c[i] = a[i] + b[i];
@@ -16,7 +15,6 @@ __global__ void vector_add(const float* a, const float* b, float* c, int n) {
 
 # Step 2 - scale_array
 __global__ void scale_array(float* a, float scalar, int n) {
-    // TODO: multiply each element of a by scalar in place
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) {
         a[i] = a[i] * scalar;
@@ -25,7 +23,6 @@ __global__ void scale_array(float* a, float scalar, int n) {
 
 # Step 3 - elementwise_exp
 __global__ void elementwise_exp(float* a, int n) {
-    // TODO: replace each a[i] with expf(a[i])
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n)
     {
@@ -35,7 +32,6 @@ __global__ void elementwise_exp(float* a, int n) {
 
 # Step 4 - row_max
 __global__ void row_max(const float* matrix, float* out, int rows, int cols) {
-    // TODO: compute the max of each row and write it to out[r].
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     float row_max = -INFINITY;
     if (i >= rows) return;
