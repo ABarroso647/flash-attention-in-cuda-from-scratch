@@ -109,8 +109,56 @@ __global__ void qk_scores(const float* q, const float* k, float* scores, int seq
 
 }
 
-# Step 10 - softmax_rows (not yet solved)
-# TODO: implement
+# Step 10 - softmax_rows
+struct MaxOp{
+   __device__ float operator()(float a, float b) const {return max(a,b);}
+
+};
+struct SumOp{
+  __device__ float operator()(float a, float b) const {return a + b;}
+};
+
+template <typename Op>
+__device__ float tree_reduction(float* sdata, Op op)
+{
+   for(int stride = blockDim.x/2; stride>0; stride>>=1){
+      if(threadIdx.x < stride){
+          sdata[threadIdx.x] = op(sdata[threadIdx.x], sdata[threadIdx.x+stride]);
+      }
+      __syncthreads();
+    }
+  float result = sdata[0];
+  __syncthreads();
+  return result;
+}
+
+__global__ void softmax_rows(float* matrix, int rows, int cols) {
+  //small guard incase
+  if (blockIdx.x >= rows) return;
+
+  //get my row max
+  float localmax = -INFINITY;
+  for (int stride = threadIdx.x; stride < cols; stride+=blockDim.x){
+    localmax = max(localmax, matrix[blockIdx.x*cols + stride]);
+  }
+  __shared__ float sdata[256];
+  sdata[threadIdx.x] = localmax;
+  __syncthreads();
+  float rowMax = tree_reduction(sdata, MaxOp{});
+  //get the exponential summation centered around max
+  float localSum = 0.0f;
+  for (int stride = threadIdx.x; stride < cols; stride+=blockDim.x){
+     matrix[blockIdx.x*cols + stride] = expf(matrix[blockIdx.x*cols + stride] - rowMax);
+     localSum += matrix[blockIdx.x*cols + stride]; 
+  }
+  sdata[threadIdx.x] = localSum;
+  __syncthreads();
+  float rowSum = tree_reduction(sdata, SumOp{});
+  //final softmax computation
+  for (int stride = threadIdx.x; stride < cols; stride+=blockDim.x){
+     matrix[blockIdx.x*cols + stride] = matrix[blockIdx.x*cols + stride]/rowSum;
+  }
+}
 
 # Step 11 - pv_matmul (not yet solved)
 # TODO: implement
