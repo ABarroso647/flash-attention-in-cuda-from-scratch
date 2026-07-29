@@ -185,19 +185,19 @@ __global__ void pv_matmul(const float* p, const float* v, float* out, int seq_le
 
 # Step 12 - naive_attention
 void naive_attention(const float* d_q, const float* d_k, const float* d_v, float* d_out, int seq_len, int head_dim) {
-    // TODO: allocate scratch, launch qk_scores -> softmax_rows -> pv_matmul, free scratch
 
+    dim3 thread_p_block(32, 8);
+    dim3 block((seq_len+31)/32,(seq_len+7)/8);
     // qk_scores 
     float* scores;
-    cudaMalloc(&socres, seq_len*seq_len *sizeof(float));
-    qk_scores<<<grid,block>>>(d_q, d_k, scores, seq_len, head_dim);
+    cudaMalloc(&scores, seq_len*seq_len *sizeof(float));
+    qk_scores<<<block,thread_p_block>>>(d_q, d_k, scores, seq_len, head_dim);
     // softmax_rows
-    float* p;
-    cudaMalloc(&p, seq_len*seq_len * sizeof(float));
-    softmax_rows<<<grid,block>>(scores, seq_len, seq_len);
+    softmax_rows<<<seq_len,256>>>(scores, seq_len, seq_len);
 
     // pv_matmul
-    pv_matmul<<<grid, block>>>(p, d_v, d_out, seq_len, head_dim);
+    pv_matmul<<<block, thread_p_block>>>(scores, d_v, d_out, seq_len, head_dim);
+    cudaFree(scores);
 }
 
 # Step 13 - online_max (not yet solved)
