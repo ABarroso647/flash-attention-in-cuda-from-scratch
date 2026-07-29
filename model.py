@@ -162,7 +162,6 @@ __global__ void softmax_rows(float* matrix, int rows, int cols) {
 
 # Step 11 - pv_matmul
 __global__ void pv_matmul(const float* p, const float* v, float* out, int seq_len, int head_dim) {
-    // TODO: compute out[i, d] = sum_j p[i, j] * v[j, d]
     int i = blockIdx.y * blockDim.y + threadIdx.y;
     int d = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -184,8 +183,22 @@ __global__ void pv_matmul(const float* p, const float* v, float* out, int seq_le
 
 }
 
-# Step 12 - naive_attention (not yet solved)
-# TODO: implement
+# Step 12 - naive_attention
+void naive_attention(const float* d_q, const float* d_k, const float* d_v, float* d_out, int seq_len, int head_dim) {
+    // TODO: allocate scratch, launch qk_scores -> softmax_rows -> pv_matmul, free scratch
+
+    // qk_scores 
+    float* scores;
+    cudaMalloc(&socres, seq_len*seq_len *sizeof(float));
+    qk_scores<<<grid,block>>>(d_q, d_k, scores, seq_len, head_dim);
+    // softmax_rows
+    float* p;
+    cudaMalloc(&p, seq_len*seq_len * sizeof(float));
+    softmax_rows<<<grid,block>>(scores, seq_len, seq_len);
+
+    // pv_matmul
+    pv_matmul<<<grid, block>>>(p, d_v, d_out, seq_len, head_dim);
+}
 
 # Step 13 - online_max (not yet solved)
 # TODO: implement
