@@ -259,8 +259,18 @@ __device__ void tile_scores(const float* q_tile, const float* k_tile, float* s_t
     }
 }
 
-# Step 19 - tile_rowmax (not yet solved)
-# TODO: implement
+# Step 19 - tile_rowmax
+__device__ void tile_rowmax(const float* s_tile, float* row_max_out, int tile_q, 
+int tile_k, int thread_id, int num_threads) {
+
+    for(int idx = thread_id; idx < tile_q; idx+=num_threads){
+        float cur_max = -INFINITY;
+        for(int col = 0; col<tile_k; ++col){
+            cur_max = max(cur_max, s_tile[idx*tile_k+col]);
+        }
+        row_max_out[idx] = cur_max;
+    }
+}
 
 # Step 20 - tile_exp (not yet solved)
 # TODO: implement
