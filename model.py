@@ -299,8 +299,21 @@ __device__ void tile_rowsum(const float* p_tile, float* row_sum_out,
     }
 }
 
-# Step 22 - accumulate_pv (not yet solved)
-# TODO: implement
+# Step 22 - accumulate_pv
+__device__ void accumulate_pv(const float* p_tile, const float* v_tile, float* out_acc, 
+int tile_q, int tile_k, int head_dim, int thread_id, int num_threads) {
+
+    for(int idx = thread_id; idx< tile_q*head_dim; idx+=num_threads){
+        const int r = idx/head_dim;
+        const int c = idx%head_dim;
+        float dot_product = 0.0f;
+        for(int inner_idx = 0; inner_idx < tile_k; ++inner_idx){
+            dot_product += p_tile[r*tile_k+inner_idx]*v_tile[inner_idx*head_dim+c];
+        }
+        out_acc[idx] += dot_product;
+    }
+
+}
 
 # Step 23 - flash_attention_kernel (not yet solved)
 # TODO: implement
