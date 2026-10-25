@@ -476,7 +476,7 @@ __global__ void flash_attention_causal_kernel(const float* q, const float* k, co
     }    
     __syncthreads(); 
     //main loop  
-    for(int i = 0; i< seq_len && i < (tile_q + q_row-1); i+=tile_k){
+    for(int i = 0; i< seq_len && i < (tile_q + q_row); i+=tile_k){
         load_tile(k,s_k,
         i, 0,
         seq_len, head_dim,
