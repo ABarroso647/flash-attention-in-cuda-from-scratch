@@ -437,6 +437,101 @@ __device__ void causal_mask(float* s_tile, int q_row_start, int k_col_start,
     }
 }
 
-# Step 26 - flash_attention_causal_kernel (not yet solved)
-# TODO: implement
+# Step 26 - flash_attention_causal_kernel
+__global__ void flash_attention_causal_kernel(const float* q, const float* k, const float* v,
+                                                float* out, int seq_len, int head_dim,
+                                                int tile_q, int tile_k, float scale) {{
+    extern __shared__ float smem[];
+
+    // sizes
+    const int q_size  = tile_q * head_dim;
+    const int kv_size = tile_k * head_dim;
+
+    // long-lived regions
+    float* s_q = &smem[0];
+    float* m   = &smem[q_size];
+    float* l   = &smem[q_size + tile_q];
+    float* o   = &smem[q_size + 2*tile_q];
+
+    // per-iteration regions
+    float* s_k      = &smem[2*q_size + 2*tile_q];
+    float* s_v      = &smem[2*q_size + 2*tile_q + kv_size];
+    float* s_scores = &smem[2*q_size + 2*tile_q + 2*kv_size];
+    float* m_block = &smem[2*q_size+2*tile_q+2*kv_size + tile_q*tile_k];
+    float* row_sum_out = &smem[2*q_size+3*tile_q+2*kv_size + tile_q*tile_k];
+    // load this block's Q tile
+    const int q_row = blockIdx.x * tile_q;
+    load_tile(q, s_q,
+              q_row, 0,
+              seq_len, head_dim,
+              tile_q, head_dim,
+              threadIdx.x, blockDim.x);
+    //get the base values
+    for(int i = threadIdx.x; i<tile_q; i+=blockDim.x){
+        m[i] = -INFINITY;
+        l[i] = 0.0f;
+    }  
+    for(int i = threadIdx.x; i<q_size; i+=blockDim.x){
+        o[i] = 0.0f;
+    }    
+    __syncthreads(); 
+    //main loop  
+    for(int i = 0; i< seq_len && i < (tile_q + q_row-1); i+=tile_k){
+        load_tile(k,s_k,
+        i, 0,
+        seq_len, head_dim,
+        tile_k, head_dim,
+        threadIdx.x, blockDim.x);
+
+        load_tile(v, s_v,
+        i, 0,
+        seq_len, head_dim,
+        tile_k, head_dim,
+        threadIdx.x, blockDim.x);
+
+        __syncthreads();
+
+        tile_scores(
+            s_q, s_k, s_scores, tile_q, tile_k, head_dim, scale, threadIdx.x, blockDim.x
+        );
+        __syncthreads();
+        for(int cur_score = threadIdx.x; cur_score < tile_q*tile_k; cur_score+=blockDim.x){
+            if (i+ (cur_score%tile_k) >= seq_len){
+                s_scores[cur_score] = -INFINITY;
+            }
+        }
+        causal_mask(s_scores, q_row, i,tile_q, tile_k, threadIdx.x, blockDim.x);
+        __syncthreads();
+        tile_rowmax(s_scores, m_block, tile_q, tile_k, threadIdx.x, blockDim.x);
+        __syncthreads();
+
+        for(int max = threadIdx.x; max < tile_q; max+=blockDim.x){
+            m_block[max] = online_max(m[max], m_block[max]);
+        }
+        __syncthreads();
+
+        tile_exp(s_scores, m_block, tile_q, tile_k, threadIdx.x, blockDim.x);
+        __syncthreads();
+        tile_rowsum(s_scores, row_sum_out, tile_q,tile_k, threadIdx.x, blockDim.x);
+        __syncthreads();
+        for(int row_idx = threadIdx.x; row_idx < tile_q; row_idx+=blockDim.x){
+           float correction = correction_factor(m[row_idx], m_block[row_idx]);
+           l[row_idx] = update_running_sum(l[row_idx], correction, row_sum_out[row_idx]);
+           rescale_output(&o[row_idx*head_dim],head_dim, correction);
+           m[row_idx]=m_block[row_idx];
+        }
+        __syncthreads();
+        accumulate_pv(s_scores, s_v, o, tile_q, tile_k, head_dim, threadIdx.x, blockDim.x);
+
+        __syncthreads();
+    }
+    for(int i = threadIdx.x; i<q_size; i+=blockDim.x){
+        int idx = i + (q_row*head_dim);
+        if (idx < seq_len*head_dim){
+            out[idx] = o[i] / l[i/head_dim];
+        }
+    } 
+}
+
+}
 
